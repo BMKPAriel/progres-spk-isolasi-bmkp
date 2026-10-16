@@ -139,6 +139,11 @@ svg text{fill:var(--ink-2);font-family:var(--f-body)}
 .spkmeta div{background:var(--surface-2);border-radius:8px;padding:7px 9px}
 .spkmeta b{display:block;font-size:13.5px}
 .lock{max-width:360px}
+.login{min-height:100%;display:grid;place-items:center;padding-block:32px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.login .card{width:100%;max-width:400px;display:flex;flex-direction:column;gap:14px;padding:24px;border-top:4px solid var(--gold)}
+.login .lg{display:flex;align-items:center;gap:12px}.login .lg img{width:56px;height:56px;border-radius:50%;background:#fff}
+.login .err{color:var(--bad);font-weight:600;font-size:13px;margin:0}
+.who{display:flex;flex-direction:column;align-items:flex-end;line-height:1.15;font-size:12px}.who b{font-size:13px}.who span{color:var(--ink-3)}
 nav.tabs{display:none}
 @media (max-width:900px){
   .shell{grid-template-columns:1fr}
@@ -171,9 +176,11 @@ nav.tabs{display:none}
   <div class="brand"><img id="logo" alt="Logo BMKP"><div><b>ISOLASI BMKP</b><small>Laporan harian · semua area</small></div></div>
   <div class="sp"></div>
   <span class="clock num" id="clock"></span>
+  <button class="chip" id="userChip" type="button" title="Akun" hidden></button>
   <button class="chip" id="syncChip" type="button" title="Sinkronkan"><span class="dot"></span><span id="syncTxt">Lokal</span></button>
 </header>
-<div class="shell">
+<div id="login" class="login" hidden></div>
+<div class="shell" id="shell">
   <nav class="rail" id="rail"></nav>
   <main><div class="wrap" id="view"></div></main>
 </div>
@@ -186,6 +193,13 @@ const LOGO="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAF4AAABcCAYAAADnGgJlAA
 document.getElementById('logo').src=LOGO;
 /* ---------- konstanta ---------- */
 const LS='bmkp_isolasi_harian_v1';
+/* alamat server bawaan: semua perangkat langsung tersambung */
+const SERVER_URL='https://script.google.com/macros/s/AKfycbxOe2H7QWcQbQUttiYt8mQUq2W_AmpR9GUNC_XUsN5yZAhE7sjmoGyUhtb0PFybbrpPaw/exec';
+const SERVER_TOKEN='BMKP-ISOLASI-2026';
+const LS_SES='bmkp_isolasi_sesi';
+function hpin(p){let h1=0xdeadbeef^7,h2=0x41c6ce57^7;const s='bmkp|'+String(p);for(let i=0;i<s.length;i++){const c=s.charCodeAt(i);h1=Math.imul(h1^c,2654435761);h2=Math.imul(h2^c,1597334677)}
+  h1=Math.imul(h1^(h1>>>16),2246822507)^Math.imul(h2^(h2>>>13),3266489909);h2=Math.imul(h2^(h2>>>16),2246822507)^Math.imul(h1^(h1>>>13),3266489909);
+  return (h2>>>0).toString(16).padStart(8,'0')+(h1>>>0).toString(16).padStart(8,'0')}
 const SIZES=['1/2"','3/4"','1"','1 1/2"','2"','3"','4"','6"','8"','10"','12"','14"','16"','18"','20"','24"','30"'];
 const TEBAL=['50 mm Calsil','50 mm Rockwool','100 mm Calsil','100 mm Rockwool'];
 const JENIS={'Pipa':{sat:'m',opts:SIZES},'HE':{sat:'m²',opts:TEBAL},'Dinding/Box':{sat:'m²',opts:TEBAL},'Lainnya':{sat:'',opts:null}};
@@ -224,7 +238,7 @@ function toast(t){const el=$('#toast');el.textContent=t;el.hidden=false;clearTim
 function seed(){
   const S=(no,uraian,mulai,selesai,items)=>({id:'spk-ma3-'+no.toLowerCase(),area:'MA3',no,uraian,mulai,selesai,items:items.map(x=>({jenis:x[0],ukuran:x[1],line:x[2],vol:x[3]})),_ubah:1});
   return {
-    areas:[{kode:'MA1',nama:'Unit Rate Isolasi & Steam Trace',mandor:'',regu:7},{kode:'MA2',nama:'Unit Rate Isolasi',mandor:'',regu:7},{kode:'MA3',nama:'Unit Rate Isolasi Area HCC',mandor:'Hermanto',regu:7}],
+    areas:[{kode:'MA1',nama:'Unit Rate Isolasi & Steam Trace',mandor:'',regu:7,pin:hpin('1111')},{kode:'MA2',nama:'Unit Rate Isolasi',mandor:'',regu:7,pin:hpin('2222')},{kode:'MA3',nama:'Unit Rate Isolasi Area HCC',mandor:'Hermanto',regu:7,pin:hpin('3333')}],
     libur:[], pct:80,
     spk:[
       S('SPK-477','Perbaikan isolasi shell E-2-04 A s/d F','2026-10-09','2026-10-16',[['HE','50 mm Calsil','E-2-04 A',2.16]]),
@@ -234,14 +248,20 @@ function seed(){
       S('SPK-512','Pembongkaran line channel & shell','2026-10-22','2026-10-29',[['Pipa','8"','E-3-01 P/R',20],['Pipa','8"','E-3-13 P/N',20],['Pipa','12"','G-3-06 C/D',45]]),
       S('SPK-514','Pembongkaran line channel & shell','2026-10-22','2026-10-29',[['Pipa','6"','E-3-23B',20],['Pipa','6"','E-3-24B',20],['Pipa','24"','E-3-24B',15]])
     ],
-    lap:[], set:{url:'',token:'',pin:'1234',pelapor:''}, cfgUbah:1
+    lap:[], set:{url:SERVER_URL,token:SERVER_TOKEN,pcPin:hpin('1234')}, cfgUbah:1
   };
 }
 let DB;
 function load(){try{const t=localStorage.getItem(LS);DB=t?JSON.parse(t):seed()}catch(e){DB=seed()}
-  DB.set=Object.assign({url:'',token:'',pin:'1234',pelapor:''},DB.set||{});DB.libur=DB.libur||[];DB.pct=DB.pct||80}
+  DB.set=Object.assign({url:SERVER_URL,token:SERVER_TOKEN},DB.set||{});if(!DB.set.url)DB.set.url=SERVER_URL;if(!DB.set.token)DB.set.token=SERVER_TOKEN;
+  if(!DB.set.pcPin)DB.set.pcPin=hpin(DB.set.pin||'1234');delete DB.set.pin;
+  DB.areas.forEach((a,i)=>{if(!a.pin)a.pin=hpin(String(i+1).repeat(4))});DB.libur=DB.libur||[];DB.pct=DB.pct||80}
 function save(){try{localStorage.setItem(LS,JSON.stringify(DB))}catch(e){}}
 load();
+let SES=null;try{SES=JSON.parse(localStorage.getItem(LS_SES)||'null')}catch(e){}
+const isPC=()=>!!SES&&SES.role==='pc';
+const VA=()=>!SES?[]:isPC()?DB.areas:DB.areas.filter(a=>a.kode===SES.area);
+const inVA=k=>VA().some(a=>a.kode===k);
 const liveLap=()=>DB.lap.filter(l=>!l.del);
 const liveSpk=()=>DB.spk.filter(s=>!s.del);
 const areaIdx=k=>Math.max(0,DB.areas.findIndex(a=>a.kode===k));
@@ -286,9 +306,11 @@ const evPill=e=>({'Sesuai target':'p-ok','Lewat target mandor':'p-warn','Lewat b
 
 /* ---------- navigasi ---------- */
 let VIEW='home';
-function nav(){const h=MENU.map(([k,t])=>`<button type="button" data-go="${k}" class="${VIEW===k?'act':''}">${ICON[k]}<span>${t}</span></button>`).join('');
-  $('#rail').innerHTML=h+'<div class="foot">PT. Bumimarga Kharisma Perkasa<br>Data tersimpan di perangkat ini'+(DB.set.url?' + server':'')+'</div>';
-  $('#tabs').innerHTML=MENU.filter(m=>m[0]!=='set'||true).map(([k,t])=>`<button type="button" data-go="${k}" class="${VIEW===k?'act':''}">${ICON[k]}<span>${t.split(' ')[0]}</span></button>`).join('')}
+function nav(){const h=MENU.filter(m=>m[0]!=='set'||isPC()).map(([k,t])=>`<button type="button" data-go="${k}" class="${VIEW===k?'act':''}">${ICON[k]}<span>${t}</span></button>`).join('');
+  $('#rail').innerHTML=h+'<div class="foot">PT. Bumimarga Kharisma Perkasa<br>Masuk sebagai '+esc(SES?SES.nama:'')+'<br><button class="btn sm" type="button" id="railOut" style="margin-top:8px">Keluar</button></div>';
+  const ro=$('#railOut');if(ro)ro.onclick=()=>go('akun');
+  const uc=$('#userChip');uc.hidden=!SES;if(SES)uc.innerHTML=`<span class="who"><b>${esc(SES.nama)}</b><span>${isPC()?'Project Control':'Admin '+esc(SES.area)}</span></span>`;
+  $('#tabs').innerHTML=MENU.filter(m=>m[0]!=='set'||isPC()).map(([k,t])=>`<button type="button" data-go="${k}" class="${VIEW===k?'act':''}">${ICON[k]}<span>${t.split(' ')[0]}</span></button>`).join('')}
 document.addEventListener('click',e=>{const b=e.target.closest('[data-go]');if(b){go(b.dataset.go)}});
 function go(v){VIEW=v;nav();R[v]();window.scrollTo(0,0)}
 setInterval(()=>{const d=nowWita();$('#clock').textContent=`${tglID(iso(d),true)} · ${String(d.getUTCHours()).padStart(2,'0')}:${String(d.getUTCMinutes()).padStart(2,'0')} WITA`},1000);
@@ -305,23 +327,23 @@ function targetToday(area,tgl){let t=0;liveSpk().filter(s=>s.area===area).forEac
 let HOME_DATE=today();
 function chartBars(days){
   const W=760,H=220,pl=36,pb=28,pt=12,pr=8;
-  const data=days.map(d=>DB.areas.map(a=>dayVol(a.kode,d).m));
+  const AR=VA();const data=days.map(d=>AR.map(a=>dayVol(a.kode,d).m));
   const mx=Math.max(10,...data.map(r=>r.reduce((x,y)=>x+y,0)));const step=mx>60?20:mx>30?10:5;const top=Math.ceil(mx/step)*step;
   const y=v=>pt+(H-pt-pb)*(1-v/top);const bw=(W-pl-pr)/days.length;
   let g='';for(let v=0;v<=top;v+=step){g+=`<line x1="${pl}" x2="${W-pr}" y1="${y(v)}" y2="${y(v)}" stroke="var(--line)"/><text x="${pl-6}" y="${y(v)+4}" text-anchor="end" font-size="11">${v}</text>`}
   days.forEach((d,i)=>{let acc=0;const x=pl+i*bw+bw*.18,w=bw*.64;
-    data[i].forEach((v,j)=>{if(v<=0)return;const y1=y(acc+v),y0=y(acc);g+=`<rect x="${x}" y="${y1}" width="${w}" height="${Math.max(0,y0-y1)}" fill="${AC[j%4]}" rx="2"><title>${DB.areas[j].kode} ${tglID(d,true)}: ${fmt(v)} m</title></rect>`;acc+=v});
+    data[i].forEach((v,j)=>{if(v<=0)return;const y1=y(acc+v),y0=y(acc);g+=`<rect x="${x}" y="${y1}" width="${w}" height="${Math.max(0,y0-y1)}" fill="${AC[areaIdx(AR[j].kode)%4]}" rx="2"><title>${AR[j].kode} ${tglID(d,true)}: ${fmt(v)} m</title></rect>`;acc+=v});
     if(acc>0)g+=`<text x="${x+w/2}" y="${y(acc)-4}" text-anchor="middle" font-size="10.5" font-weight="700">${fmt(acc,1)}</text>`;
     g+=`<text x="${x+w/2}" y="${H-10}" text-anchor="middle" font-size="10.5" ${d===HOME_DATE?'font-weight="700"':''}>${D(d).getUTCDate()}/${D(d).getUTCMonth()+1}</text>`});
   return `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Volume pipa harian per area">${g}</svg>`}
 const R={};
 R.home=function(){
   const t=HOME_DATE;const days=[];let s=t;while(days.length<10){if(isWork(s))days.unshift(s);s=addDays(s,-1)}
-  let tm=0,tm2=0,th=0,lapCount=0;DB.areas.forEach(a=>{const v=dayVol(a.kode,t);tm+=v.m;tm2+=v.m2;const l=lapOf(a.kode,t);if(l){lapCount++;th+=hadirN(l)}});
-  const spks=liveSpk().map(sp=>({sp,c:spkCalc(sp,t)}));
+  let tm=0,tm2=0,th=0,lapCount=0;VA().forEach(a=>{const v=dayVol(a.kode,t);tm+=v.m;tm2+=v.m2;const l=lapOf(a.kode,t);if(l){lapCount++;th+=hadirN(l)}});
+  const spks=liveSpk().filter(sp=>inVA(sp.area)).map(sp=>({sp,c:spkCalc(sp,t)}));
   const aktif=spks.filter(x=>x.c.status!=='Selesai');const risk=aktif.filter(x=>x.c.ev==='Lewat batas SPK').length;
-  const reguStd=DB.areas.reduce((x,a)=>x+(+a.regu||0),0);
-  const cards=DB.areas.map((a,i)=>{
+  const reguStd=VA().reduce((x,a)=>x+(+a.regu||0),0);
+  const cards=VA().map(a=>{const i=areaIdx(a.kode);
     const l=lapOf(a.kode,t),v=dayVol(a.kode,t),tg=targetToday(a.kode,t);
     const sa=spks.filter(x=>x.sp.area===a.kode);const run=sa.filter(x=>x.c.status!=='Selesai');
     const pct=sa.length?sa.reduce((x,y)=>x+y.c.td,0)/Math.max(1,sa.reduce((x,y)=>x+y.c.tp,0)):0;
@@ -339,16 +361,16 @@ R.home=function(){
     <td class="num">${tglID(c.tMandor,true)}</td><td class="num">${tglID(sp.selesai,true)}</td><td><span class="pill ${stPill(c.status)}">${c.status}</span></td>
     <td class="num">${tglID(c.pred,true)}</td><td><span class="pill ${evPill(c.ev)}">${c.ev}</span></td></tr>`).join('');
   $('#view').innerHTML=`
-  <div class="head"><div><h1>Ringkasan semua area</h1><p class="sub">${tglID(t)}${isWork(t)?'':' · hari libur'}</p></div>
+  <div class="head"><div><h1>${isPC()?'Ringkasan semua area':'Ringkasan '+esc(SES.area)}</h1><p class="sub">${tglID(t)}${isWork(t)?'':' · hari libur'}</p></div>
    <div class="acts"><input type="date" id="hDate" value="${t}" style="width:auto"><button class="btn" type="button" id="hToday">Hari ini</button></div></div>
   <div class="stats">
     <div><div class="lbl">Pipa terpasang</div><div class="v num gold">${fmt(tm,1)}<small>m</small></div><div class="s">HE / dinding ${fmt(tm2,2)} m²</div></div>
-    <div><div class="lbl">Area sudah lapor</div><div class="v num">${lapCount}<small>/ ${DB.areas.length}</small></div><div class="s">${lapCount<DB.areas.length&&isWork(t)?'ada area belum lapor':'laporan lengkap'}</div></div>
+    <div><div class="lbl">Area sudah lapor</div><div class="v num">${lapCount}<small>/ ${VA().length}</small></div><div class="s">${lapCount<VA().length&&isWork(t)?'ada area belum lapor':'laporan lengkap'}</div></div>
     <div><div class="lbl">Pekerja hadir</div><div class="v num">${th}<small>/ ${reguStd}</small></div><div class="s">regu standar semua area</div></div>
     <div><div class="lbl">SPK aktif</div><div class="v num">${aktif.length}</div><div class="s">${risk?risk+' diprediksi lewat batas SPK':'semua dalam batas SPK'}</div></div>
   </div>
-  <div class="grid g3">${cards}</div>
-  <div class="card"><div class="head"><h2>Pipa terpasang 10 hari kerja terakhir (m)</h2><div class="legend">${DB.areas.map((a,i)=>`<span><i style="background:${AC[i%4]}"></i>${esc(a.kode)}</span>`).join('')}</div></div>${chartBars(days)}</div>
+  <div class="grid ${VA().length>1?'g3':'g2'}">${cards}</div>
+  <div class="card"><div class="head"><h2>Pipa terpasang 10 hari kerja terakhir (m)</h2><div class="legend">${VA().map(a=>`<span><i style="background:${AC[areaIdx(a.kode)%4]}"></i>${esc(a.kode)}</span>`).join('')}</div></div>${chartBars(days)}</div>
   <div class="card"><div class="head"><h2>SPK berjalan & belum mulai</h2><span class="note">Target mandor = ${DB.pct}% hari kerja SPK</span></div>
    ${rows?`<div class="tw" style="margin-top:10px"><table><thead><tr><th>Area</th><th>SPK</th><th>Progres</th><th>Target mandor</th><th>Batas SPK</th><th>Status</th><th>Prediksi selesai</th><th>Evaluasi</th></tr></thead><tbody>${rows}</tbody></table></div>`:'<div class="empty">Semua SPK selesai.</div>'}</div>`;
   $('#hDate').onchange=e=>{HOME_DATE=e.target.value||today();R.home()};$('#hToday').onclick=()=>{HOME_DATE=today();R.home()};
@@ -358,7 +380,7 @@ R.home=function(){
 
 /* ---------- INPUT HARIAN ---------- */
 const IN={area:'MA3',tgl:today(),d:null};
-function blankLap(area,tgl){return {id:'lap-'+area+'-'+tgl,area,tgl,pelapor:DB.set.pelapor||'',cuaca:'Cerah',hadir:{m:'',f:'',t:'',h:''},items:[],kendala:[],rencana:[],catatan:''}}
+function blankLap(area,tgl){return {id:'lap-'+area+'-'+tgl,area,tgl,pelapor:SES?SES.nama:'',cuaca:'Cerah',hadir:{m:'',f:'',t:'',h:''},items:[],kendala:[],rencana:[],catatan:''}}
 function spkOpts(area,sel){return '<option value="">- tanpa SPK -</option>'+liveSpk().filter(s=>s.area===area).map(s=>`<option ${s.no===sel?'selected':''}>${esc(s.no)}</option>`).join('')}
 function ukOpts(j,sel){const o=(JENIS[j]||{}).opts;if(!o)return null;return o.map(x=>`<option ${x===sel?'selected':''}>${esc(x)}</option>`).join('')}
 function ukField(kind,i,it){const o=ukOpts(it.jenis,it.ukuran);return o?`<select data-k="${kind}" data-i="${i}" data-f="ukuran">${o}</select>`:`<input data-k="${kind}" data-i="${i}" data-f="ukuran" value="${esc(it.ukuran)}" placeholder="uraian">`}
@@ -395,9 +417,9 @@ R.input=function(){
   $('#view').innerHTML=`
   <div class="head"><div><h1>Input laporan harian</h1><p class="sub">${ex?'Mengubah laporan yang sudah tersimpan':'Laporan baru'} · ${tglID(d.tgl)}</p></div></div>
   <div class="card grid g4">
-    <div class="f"><label for="iArea">Area</label><select id="iArea">${DB.areas.map(a=>`<option ${a.kode===d.area?'selected':''}>${esc(a.kode)}</option>`).join('')}</select></div>
+    <div class="f"><label for="iArea">Area</label><select id="iArea">${VA().map(a=>`<option ${a.kode===d.area?'selected':''}>${esc(a.kode)}</option>`).join('')}</select></div>
     <div class="f"><label for="iTgl">Tanggal</label><input type="date" id="iTgl" value="${d.tgl}"></div>
-    <div class="f"><label for="iPel">Pelapor</label><input id="iPel" value="${esc(d.pelapor)}" placeholder="nama admin / mandor"></div>
+    <div class="f"><label for="iPel">Pelapor</label><input id="iPel" value="${esc(d.pelapor||SES.nama)}" readonly title="Diambil dari akun yang masuk"></div>
     <div class="f"><label for="iCuaca">Cuaca</label><select id="iCuaca">${CUACA.map(c=>`<option ${c===d.cuaca?'selected':''}>${c}</option>`).join('')}</select></div>
   </div>
   <div class="card"><div class="head"><h2>Kehadiran regu</h2><span class="note">Standar ${A.regu||7} orang${A.mandor?' · mandor '+esc(A.mandor):''}</span></div>
@@ -414,7 +436,7 @@ R.input=function(){
   <div id="delAsk" hidden class="card" style="border-color:var(--bad)"><b>Hapus laporan ${esc(d.area)} ${tglID(d.tgl,true)}?</b><div class="acts" style="margin-top:8px"><button class="btn dark" type="button" id="delYes">Ya, hapus</button><button class="btn" type="button" id="delNo">Batal</button></div></div>`;
   $('#iArea').onchange=e=>{IN.area=e.target.value;IN.d=null;R.input()};
   $('#iTgl').onchange=e=>{IN.tgl=e.target.value||today();IN.d=null;R.input()};
-  $('#iPel').oninput=e=>{d.pelapor=e.target.value};$('#iCuaca').onchange=e=>{d.cuaca=e.target.value};$('#iCat').oninput=e=>{d.catatan=e.target.value};
+  $('#iCuaca').onchange=e=>{d.cuaca=e.target.value};$('#iCat').oninput=e=>{d.catatan=e.target.value};
   document.querySelectorAll('[data-h]').forEach(x=>x.oninput=()=>{d.hadir[x.dataset.h]=x.value});
   document.querySelectorAll('[data-add]').forEach(b=>b.onclick=()=>{const k=b.dataset.add;
     if(k==='items')d.items.push({jenis:'Pipa',ukuran:'4"',spk:'',line:'',keg:'Bongkar-pasang',vol:''});
@@ -427,7 +449,7 @@ R.input=function(){
     if(x.dataset.f==='spk'){R.input();return}
     if(x.dataset.f==='vol')$('#tot').innerHTML=totalsLine(d)})});
   const fp=$('#fromPlan');if(fp)fp.onclick=()=>{prev.rencana.forEach(p=>d.items.push({jenis:p.jenis,ukuran:p.ukuran,spk:p.spk,line:p.line,keg:'Bongkar-pasang',vol:''}));R.input();toast('Rencana kemarin dimasukkan, tinggal isi volume')};
-  const doSave=()=>{d.items=d.items.filter(x=>x.ukuran||x.vol);d.pelapor&&(DB.set.pelapor=d.pelapor);d._ubah=Date.now();d.del=false;
+  const doSave=()=>{if(!inVA(d.area)){toast('Anda tidak berhak mengisi area ini');return}d.items=d.items.filter(x=>x.ukuran||x.vol);d.oleh=SES.nama;if(!d.pelapor)d.pelapor=SES.nama;d._ubah=Date.now();d.del=false;
     const i=DB.lap.findIndex(l=>l.id===d.id);if(i>=0)DB.lap[i]=JSON.parse(JSON.stringify(d));else DB.lap.push(JSON.parse(JSON.stringify(d)));save();push([{tipe:'lap',rec:d}]);toast('Laporan tersimpan')};
   $('#iSave').onclick=()=>{doSave();R.input()};
   $('#iSaveWa').onclick=()=>{doSave();WA.area=d.area;WA.tgl=d.tgl;go('wa')};
@@ -439,7 +461,7 @@ R.input=function(){
 let SPK_AREA='Semua',SPK_EDIT=null;
 R.spk=function(){
   if(SPK_EDIT)return spkForm();
-  const list=liveSpk().filter(s=>SPK_AREA==='Semua'||s.area===SPK_AREA).map(s=>({s,c:spkCalc(s)})).sort((a,b)=>(a.c.status==='Selesai')-(b.c.status==='Selesai')||(a.s.mulai<b.s.mulai?-1:1));
+  const list=liveSpk().filter(s=>inVA(s.area)&&(SPK_AREA==='Semua'||s.area===SPK_AREA)).map(s=>({s,c:spkCalc(s)})).sort((a,b)=>(a.c.status==='Selesai')-(b.c.status==='Selesai')||(a.s.mulai<b.s.mulai?-1:1));
   const cards=list.map(({s,c})=>{
     const byKey=Object.keys(c.plan).map(k=>{const [j,u]=k.split('|');const p=c.plan[k],g=Math.min(p,c.got[k]||0);
       return `<tr><td>${esc(j)}</td><td><b>${esc(u)}</b></td><td class="r num">${fmt(p)}</td><td class="r num">${fmt(g)}</td><td class="r num">${fmt(p-g)}</td><td class="r num"><b>${fmt(c.tpd[k],1)}</b></td><td>${satOf(j)}</td></tr>`}).join('');
@@ -452,10 +474,10 @@ R.spk=function(){
       <div class="acts"><button class="btn sm" type="button" data-edit="${s.id}">Ubah SPK</button></div></div>`}).join('');
   $('#view').innerHTML=`<div class="head"><div><h1>Daftar SPK</h1><p class="sub">Target mandor ${DB.pct}% dari hari kerja SPK (Senin–Jumat, di luar tanggal merah). Target per hari per ukuran untuk diberikan ke mandor.</p></div>
    <button class="btn pri" type="button" id="spkNew">+ SPK baru</button></div>
-   <div class="seg" id="spkSeg">${['Semua',...DB.areas.map(a=>a.kode)].map(k=>`<button type="button" data-a="${esc(k)}" class="${k===SPK_AREA?'act':''}">${esc(k)}</button>`).join('')}</div>
+   <div class="seg" id="spkSeg">${(isPC()?['Semua',...DB.areas.map(a=>a.kode)]:[SES.area]).map(k=>`<button type="button" data-a="${esc(k)}" class="${k===SPK_AREA?'act':''}">${esc(k)}</button>`).join('')}</div>
    ${cards||'<div class="empty">Belum ada SPK untuk area ini. Tekan "+ SPK baru".</div>'}`;
   document.querySelectorAll('#spkSeg button').forEach(b=>b.onclick=()=>{SPK_AREA=b.dataset.a;R.spk()});
-  $('#spkNew').onclick=()=>{SPK_EDIT={id:'spk-'+uid(),area:SPK_AREA==='Semua'?DB.areas[0].kode:SPK_AREA,no:'',uraian:'',mulai:today(),selesai:addDays(today(),7),items:[{jenis:'Pipa',ukuran:'4"',line:'',vol:''}],_new:true};R.spk()};
+  $('#spkNew').onclick=()=>{SPK_EDIT={id:'spk-'+uid(),area:SPK_AREA==='Semua'?VA()[0].kode:SPK_AREA,no:'',uraian:'',mulai:today(),selesai:addDays(today(),7),items:[{jenis:'Pipa',ukuran:'4"',line:'',vol:''}],_new:true};R.spk()};
   document.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>{SPK_EDIT=JSON.parse(JSON.stringify(DB.spk.find(s=>s.id===b.dataset.edit)));R.spk()});
 };
 function spkForm(){
@@ -466,7 +488,7 @@ function spkForm(){
     <div class="f"><label>Volume (${satOf(x.jenis)||'sat'})</label><input class="num" type="number" step="0.01" min="0" data-k="si" data-i="${i}" data-f="vol" value="${esc(x.vol)}"></div>
     <button class="btn x" type="button" data-sdel="${i}" aria-label="Hapus item">✕</button></div>`).join('');
   $('#view').innerHTML=`<div class="head"><div><h1>${s._new?'SPK baru':'Ubah '+esc(s.no)}</h1><p class="sub">Durasi dari end user. Target mandor dihitung otomatis.</p></div></div>
-  <div class="card grid g4"><div class="f"><label for="sA">Area</label><select id="sA">${DB.areas.map(a=>`<option ${a.kode===s.area?'selected':''}>${esc(a.kode)}</option>`).join('')}</select></div>
+  <div class="card grid g4"><div class="f"><label for="sA">Area</label><select id="sA">${VA().map(a=>`<option ${a.kode===s.area?'selected':''}>${esc(a.kode)}</option>`).join('')}</select></div>
    <div class="f"><label for="sNo">No SPK</label><input id="sNo" value="${esc(s.no)}" placeholder="SPK-515"></div>
    <div class="f"><label for="sM">Mulai</label><input type="date" id="sM" value="${s.mulai}"></div><div class="f"><label for="sS">Selesai (batas end user)</label><input type="date" id="sS" value="${s.selesai}"></div>
    <div class="f" style="grid-column:1/-1"><label for="sU">Uraian pekerjaan</label><input id="sU" value="${esc(s.uraian)}"></div></div>
@@ -480,7 +502,7 @@ function spkForm(){
     if(x.dataset.f==='jenis'){const o=(JENIS[x.value]||{}).opts;r.ukuran=o?o[0]:'';spkForm()}}));
   $('#sCancel').onclick=()=>{SPK_EDIT=null;R.spk()};
   $('#sSave').onclick=()=>{if(!s.no.trim()){toast('Isi nomor SPK dulu');return}if(s.selesai<s.mulai){toast('Tanggal selesai sebelum tanggal mulai');return}
-    s.items=s.items.filter(x=>Number(x.vol)>0).map(x=>({jenis:x.jenis,ukuran:x.ukuran,line:x.line,vol:Number(x.vol)}));delete s._new;s._ubah=Date.now();
+    s.items=s.items.filter(x=>Number(x.vol)>0).map(x=>({jenis:x.jenis,ukuran:x.ukuran,line:x.line,vol:Number(x.vol)}));delete s._new;s._ubah=Date.now();s.oleh=SES.nama;
     const i=DB.spk.findIndex(x=>x.id===s.id);if(i>=0)DB.spk[i]=s;else DB.spk.push(s);save();push([{tipe:'spk',rec:s}]);SPK_EDIT=null;toast('SPK tersimpan');R.spk()};
   const dl=$('#sDel');if(dl){dl.onclick=()=>$('#sAsk').hidden=false;$('#sNoBtn').onclick=()=>$('#sAsk').hidden=true;
     $('#sYes').onclick=()=>{const x=DB.spk.find(y=>y.id===s.id);x.del=true;x._ubah=Date.now();save();push([{tipe:'spk',rec:x}]);SPK_EDIT=null;toast('SPK dihapus');R.spk()}}
@@ -515,7 +537,7 @@ function waText(area,tgl){
 R.wa=function(){
   const txt=waText(WA.area,WA.tgl);
   $('#view').innerHTML=`<div class="head"><div><h1>Kirim laporan ke grup WA</h1><p class="sub">Pesan disusun otomatis dari laporan harian. Bisa diedit sebelum dikirim.</p></div></div>
-  <div class="card grid g3"><div class="f"><label for="wArea">Area</label><select id="wArea">${['Semua',...DB.areas.map(a=>a.kode)].map(k=>`<option ${k===WA.area?'selected':''} value="${esc(k)}">${k==='Semua'?'Semua area (1 pesan)':esc(k)}</option>`).join('')}</select></div>
+  <div class="card grid g3"><div class="f"><label for="wArea">Area</label><select id="wArea">${(isPC()?['Semua',...DB.areas.map(a=>a.kode)]:[SES.area]).map(k=>`<option ${k===WA.area?'selected':''} value="${esc(k)}">${k==='Semua'?'Semua area (1 pesan)':esc(k)}</option>`).join('')}</select></div>
    <div class="f"><label for="wTgl">Tanggal</label><input type="date" id="wTgl" value="${WA.tgl}"></div>
    <div class="f"><label>&nbsp;</label><div class="acts"><button class="btn dark" type="button" id="wCopy">Salin teks</button><a class="btn wa" id="wOpen" target="_blank" rel="noopener" href="#">Buka WhatsApp</a></div></div></div>
   <div class="card"><label class="lbl" for="wTxt">Pratinjau pesan</label><textarea id="wTxt" class="wa-prev" style="margin-top:8px" rows="22">${esc(txt)}</textarea>
@@ -529,7 +551,7 @@ R.wa=function(){
 /* ---------- REKAP ---------- */
 let RK_MON=today().slice(0,7),RK_AREA='Semua';
 R.rekap=function(){
-  const [y,m]=RK_MON.split('-').map(Number);const areas=RK_AREA==='Semua'?DB.areas.map(a=>a.kode):[RK_AREA];
+  const [y,m]=RK_MON.split('-').map(Number);const areas=RK_AREA==='Semua'?VA().map(a=>a.kode):[RK_AREA];
   const laps=liveLap().filter(l=>l.tgl.slice(0,7)===RK_MON&&areas.includes(l.area));
   const agg={};laps.forEach(l=>(l.items||[]).forEach(x=>{const v=Number(x.vol)||0;if(!v)return;const k=x.jenis+'|'+x.ukuran;agg[k]=agg[k]||{};agg[k][l.area]=(agg[k][l.area]||0)+v}));
   const order=k=>{const [j,u]=k.split('|');return (Object.keys(JENIS).indexOf(j))*100+((JENIS[j].opts||[]).indexOf(u)+1)};
@@ -544,7 +566,7 @@ R.rekap=function(){
   const totM=laps.reduce((x,l)=>x+dayVol(l.area,l.tgl).m,0);
   $('#view').innerHTML=`<div class="head"><div><h1>Rekap ${BULANP[m-1]} ${y}</h1><p class="sub">${hk} hari kerja · ${laps.length} laporan · pipa ${fmt(totM)} m</p></div>
    <div class="acts"><input type="month" id="rMon" value="${RK_MON}" style="width:auto"><button class="btn" type="button" id="rCsv">Unduh CSV</button></div></div>
-  <div class="seg" id="rSeg">${['Semua',...DB.areas.map(a=>a.kode)].map(k=>`<button type="button" data-a="${esc(k)}" class="${k===RK_AREA?'act':''}">${esc(k)}</button>`).join('')}</div>
+  <div class="seg" id="rSeg">${(isPC()?['Semua',...DB.areas.map(a=>a.kode)]:[SES.area]).map(k=>`<button type="button" data-a="${esc(k)}" class="${k===RK_AREA?'act':''}">${esc(k)}</button>`).join('')}</div>
   <div class="card"><h2>Volume per jenis & ukuran</h2>${rows?`<div class="tw" style="margin-top:10px"><table><thead><tr><th>Jenis</th><th>Ukuran</th>${areas.map(a=>`<th class="r">${esc(a)}</th>`).join('')}<th class="r">Total</th><th>Sat.</th></tr></thead><tbody>${rows}</tbody></table></div>`:'<div class="empty" style="margin-top:10px">Belum ada volume terpasang di bulan ini.</div>'}</div>
   <div class="card"><h2>Riwayat laporan harian</h2>${hist?`<div class="tw" style="margin-top:10px"><table><thead><tr><th>Tanggal</th><th>Area</th><th class="r">Pipa (m)</th><th class="r">m²</th><th class="r">Hadir</th><th>Kendala</th><th></th></tr></thead><tbody>${hist}</tbody></table></div>`:'<div class="empty" style="margin-top:10px">Belum ada laporan.</div>'}</div>`;
   $('#rMon').onchange=e=>{RK_MON=e.target.value||today().slice(0,7);R.rekap()};
@@ -556,58 +578,89 @@ R.rekap=function(){
     const a=document.createElement('a');a.href=URL.createObjectURL(new Blob(['﻿'+csv],{type:'text/csv'}));a.download=`Rekap_Isolasi_${RK_MON}.csv`;a.click();toast('CSV dibuat')};
 };
 
-/* ---------- PENGATURAN ---------- */
-let SET_OK=false;
+/* ---------- PENGATURAN (khusus Project Control) ---------- */
 R.set=function(){
-  if(!SET_OK){$('#view').innerHTML=`<div class="head"><div><h1>Pengaturan</h1><p class="sub">Khusus Project Control.</p></div></div>
-    <div class="card lock f"><label for="pin">PIN pengaturan</label><input id="pin" type="password" inputmode="numeric" autocomplete="off"><button class="btn pri" type="button" id="pinGo">Buka</button><p class="note" id="pinMsg" style="margin:0"></p></div>`;
-    const tryPin=()=>{if($('#pin').value===String(DB.set.pin)){SET_OK=true;R.set()}else $('#pinMsg').textContent='PIN salah.'};$('#pinGo').onclick=tryPin;$('#pin').onkeydown=e=>{if(e.key==='Enter')tryPin()};return}
-  $('#view').innerHTML=`<div class="head"><div><h1>Pengaturan</h1><p class="sub">Area, kalender kerja, server, cadangan data.</p></div></div>
-  <div class="card"><h2>Area & mandor</h2><div class="tw" style="margin-top:10px"><table><thead><tr><th>Kode</th><th>Nama proyek</th><th>Mandor</th><th>Regu standar</th><th></th></tr></thead><tbody>
-   ${DB.areas.map((a,i)=>`<tr><td><input data-ar="${i}" data-f="kode" value="${esc(a.kode)}" style="width:90px"></td><td><input data-ar="${i}" data-f="nama" value="${esc(a.nama)}"></td><td><input data-ar="${i}" data-f="mandor" value="${esc(a.mandor)}"></td><td><input type="number" data-ar="${i}" data-f="regu" value="${esc(a.regu)}" style="width:80px"></td><td>${DB.areas.length>1?`<button class="btn x" type="button" data-arx="${i}" aria-label="Hapus area">✕</button>`:''}</td></tr>`).join('')}
-   </tbody></table></div><div class="acts" style="margin-top:10px"><button class="btn sm" type="button" id="arAdd">+ Tambah area</button><button class="btn sm pri" type="button" id="arSave">Simpan area</button></div></div>
+  if(!isPC()){go('home');return}
+  $('#view').innerHTML=`<div class="head"><div><h1>Pengaturan</h1><p class="sub">Area & PIN admin, kalender kerja, server, cadangan data.</p></div></div>
+  <div class="card"><h2>Area, mandor & PIN admin</h2><p class="note" style="margin:4px 0 0">PIN baru diisi hanya bila ingin mengganti; kosong = PIN lama tetap. PIN minimal 4 angka.</p>
+   <div class="tw" style="margin-top:10px"><table><thead><tr><th>Kode</th><th>Nama proyek</th><th>Mandor</th><th>Regu</th><th>PIN admin baru</th><th></th></tr></thead><tbody>
+   ${DB.areas.map((a,i)=>`<tr><td><input data-ar="${i}" data-f="kode" value="${esc(a.kode)}" style="width:90px"></td><td><input data-ar="${i}" data-f="nama" value="${esc(a.nama)}"></td><td><input data-ar="${i}" data-f="mandor" value="${esc(a.mandor)}"></td><td><input type="number" data-ar="${i}" data-f="regu" value="${esc(a.regu)}" style="width:70px"></td><td><input type="password" inputmode="numeric" autocomplete="new-password" data-pin="${i}" placeholder="tetap" style="width:120px"></td><td>${DB.areas.length>1?`<button class="btn x" type="button" data-arx="${i}" aria-label="Hapus area">✕</button>`:''}</td></tr>`).join('')}
+   </tbody></table></div><div class="acts" style="margin-top:10px"><button class="btn sm" type="button" id="arAdd">+ Tambah area</button><button class="btn sm pri" type="button" id="arSave">Simpan area & PIN</button></div></div>
+  <div class="card grid g2"><div class="f"><label for="npin">PIN Project Control baru</label><input id="npin" type="password" inputmode="numeric" autocomplete="new-password"></div><div class="acts" style="align-self:end"><button class="btn sm" type="button" id="pinSave">Ganti PIN saya</button></div></div>
   <div class="card grid g2"><div class="f"><label for="pct">Target mandor (% hari kerja SPK)</label><input id="pct" type="number" min="50" max="100" value="${DB.pct}"></div>
    <div class="f"><label for="lib">Tanggal merah / stop plant (pisahkan koma, format 2026-12-25)</label><input id="lib" value="${esc(DB.libur.join(', '))}"></div>
    <div class="acts"><button class="btn sm pri" type="button" id="calSave">Simpan kalender</button></div></div>
-  <div class="card grid g2"><div class="f"><label for="url">Alamat server (Google Apps Script /exec)</label><input id="url" value="${esc(DB.set.url)}" placeholder="https://script.google.com/macros/s/.../exec"></div>
+  <div class="card grid g2"><div class="f"><label for="url">Alamat server (Google Apps Script /exec)</label><input id="url" value="${esc(DB.set.url)}"></div>
    <div class="f"><label for="tok">Kode akses server</label><input id="tok" value="${esc(DB.set.token)}"></div>
-   <div class="acts"><button class="btn sm pri" type="button" id="srvSave">Simpan & sinkronkan</button></div>
-   <p class="note" style="margin:0;grid-column:1/-1">Tanpa server, data hanya ada di perangkat ini. Dengan server, semua admin area melihat data yang sama.</p></div>
-  <div class="card grid g2"><div class="f"><label for="npin">PIN pengaturan baru</label><input id="npin" type="password" inputmode="numeric"></div><div class="acts" style="align-self:end"><button class="btn sm" type="button" id="pinSave">Ganti PIN</button></div></div>
-  <div class="card"><h2>Cadangan data</h2><div class="acts" style="margin-top:10px"><button class="btn sm" type="button" id="bk">Unduh cadangan (.json)</button><label class="btn sm" for="rs">Pulihkan dari cadangan</label><input type="file" id="rs" accept=".json" hidden><button class="btn sm ghost" type="button" id="lock">Kunci pengaturan</button></div></div>`;
+   <div class="acts"><button class="btn sm pri" type="button" id="srvSave">Simpan & uji sambungan</button></div>
+   <p class="note" id="srvMsg" style="margin:0;grid-column:1/-1">Status: ${esc($('#syncTxt').textContent)}</p></div>
+  <div class="card"><h2>Cadangan data</h2><div class="acts" style="margin-top:10px"><button class="btn sm" type="button" id="bk">Unduh cadangan (.json)</button><label class="btn sm" for="rs">Pulihkan dari cadangan</label><input type="file" id="rs" accept=".json" hidden></div></div>`;
   document.querySelectorAll('[data-ar]').forEach(x=>x.oninput=()=>{DB.areas[+x.dataset.ar][x.dataset.f]=x.dataset.f==='regu'?Number(x.value):x.value});
   document.querySelectorAll('[data-arx]').forEach(b=>b.onclick=()=>{DB.areas.splice(+b.dataset.arx,1);R.set()});
-  $('#arAdd').onclick=()=>{DB.areas.push({kode:'Area '+(DB.areas.length+1),nama:'',mandor:'',regu:7});R.set()};
+  $('#arAdd').onclick=()=>{DB.areas.push({kode:'Area '+(DB.areas.length+1),nama:'',mandor:'',regu:7,pin:hpin(String(Date.now()).slice(-6))});R.set()};
   const cfgPush=()=>{DB.cfgUbah=Date.now();save();push([{tipe:'cfg',rec:cfgRec()}])};
-  $('#arSave').onclick=()=>{cfgPush();toast('Area tersimpan');nav()};
+  $('#arSave').onclick=()=>{let bad=false;document.querySelectorAll('[data-pin]').forEach(x=>{const v=x.value.trim();if(!v)return;if(v.length<4){bad=true;return}DB.areas[+x.dataset.pin].pin=hpin(v)});
+    if(bad){toast('PIN minimal 4 angka');return}cfgPush();toast('Area & PIN tersimpan');nav();R.set()};
+  $('#pinSave').onclick=()=>{const v=$('#npin').value.trim();if(v.length<4){toast('PIN minimal 4 angka');return}DB.set.pcPin=hpin(v);cfgPush();toast('PIN Project Control diganti');$('#npin').value=''};
   $('#calSave').onclick=()=>{DB.pct=Math.min(100,Math.max(50,Number($('#pct').value)||80));DB.libur=$('#lib').value.split(',').map(s=>s.trim()).filter(s=>/^\d{4}-\d{2}-\d{2}$/.test(s));cfgPush();toast('Kalender tersimpan');R.set()};
-  $('#srvSave').onclick=()=>{DB.set.url=$('#url').value.trim();DB.set.token=$('#tok').value.trim();save();sync()};
-  $('#pinSave').onclick=()=>{const v=$('#npin').value.trim();if(v.length<4){toast('PIN minimal 4 angka');return}DB.set.pin=v;save();toast('PIN diganti')};
-  $('#lock').onclick=()=>{SET_OK=false;R.set()};
+  $('#srvSave').onclick=async()=>{DB.set.url=$('#url').value.trim();DB.set.token=$('#tok').value.trim();save();$('#srvMsg').textContent='Menguji…';const r=await sync();$('#srvMsg').textContent=r===true?'Tersambung ke server.':'Gagal: '+r};
   $('#bk').onclick=()=>{const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(DB)],{type:'application/json'}));a.download=`Cadangan_Isolasi_BMKP_${today()}.json`;a.click()};
-  $('#rs').onchange=e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{try{const x=JSON.parse(r.result);if(!x.spk||!x.lap)throw 0;DB=x;save();toast('Data dipulihkan');R.set()}catch(_){toast('Berkas cadangan tidak dikenali')}};r.readAsText(f)};
+  $('#rs').onchange=e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{try{const x=JSON.parse(r.result);if(!x.spk||!x.lap)throw 0;DB=x;load2();save();toast('Data dipulihkan');R.set()}catch(_){toast('Berkas cadangan tidak dikenali')}};r.readAsText(f)};
 };
+function load2(){const t=JSON.stringify(DB);try{localStorage.setItem(LS,t)}catch(e){}load()}
+
+/* ---------- AKUN ---------- */
+R.akun=function(){
+  $('#view').innerHTML=`<div class="head"><div><h1>Akun</h1><p class="sub">Masuk sebagai <b>${esc(SES.nama)}</b> · ${isPC()?'Project Control (semua area)':'Admin '+esc(SES.area)}</p></div></div>
+  <div class="card lock f"><p style="margin:0">Keluar dari perangkat ini? Data laporan tetap tersimpan.</p><div class="acts"><button class="btn dark" type="button" id="outYes">Keluar</button><button class="btn" type="button" id="outNo">Batal</button></div></div>`;
+  $('#outYes').onclick=()=>{SES=null;try{localStorage.removeItem(LS_SES)}catch(e){}showLogin()};$('#outNo').onclick=()=>go('home')};
+$('#userChip').onclick=()=>go('akun');
+
+/* ---------- MASUK ---------- */
+function showLogin(msg){
+  $('#shell').hidden=true;$('#tabs').hidden=true;$('#userChip').hidden=true;const L=$('#login');L.hidden=false;
+  const prev={r:($('#lgRole')||{}).value,n:($('#lgNama')||{}).value,p:($('#lgPin')||{}).value};
+  L.innerHTML=`<form class="card" id="lgForm" autocomplete="off">
+    <div class="lg"><img src="${LOGO}" alt="Logo BMKP"><div><h1 style="font-size:26px">Isolasi BMKP</h1><div class="note">Laporan harian · semua area</div></div></div>
+    <div class="f"><label for="lgRole">Masuk sebagai</label><select id="lgRole">${DB.areas.map(a=>`<option value="${esc(a.kode)}">Admin ${esc(a.kode)}${a.mandor?' · '+esc(a.mandor):''}</option>`).join('')}<option value="__pc">Project Control</option></select></div>
+    <div class="f"><label for="lgNama">Nama Anda</label><input id="lgNama" required placeholder="nama yang tampil di laporan"></div>
+    <div class="f"><label for="lgPin">PIN</label><input id="lgPin" type="password" inputmode="numeric" required></div>
+    <p class="err" id="lgErr">${msg?esc(msg):''}</p>
+    <button class="btn pri" type="submit">Masuk</button>
+    <p class="note" style="margin:0" id="lgSrv">${esc($('#syncTxt').textContent)}</p></form>`;
+  if(prev.r)$('#lgRole').value=prev.r;if(prev.n)$('#lgNama').value=prev.n;if(prev.p)$('#lgPin').value=prev.p;
+  $('#lgForm').onsubmit=e=>{e.preventDefault();const r=$('#lgRole').value,n=$('#lgNama').value.trim(),pin=$('#lgPin').value.trim();
+    if(!n){$('#lgErr').textContent='Isi nama Anda.';return}
+    const ok=r==='__pc'?hpin(pin)===DB.set.pcPin:(DB.areas.find(a=>a.kode===r)||{}).pin===hpin(pin);
+    if(!ok){$('#lgErr').textContent='PIN salah untuk pilihan ini.';return}
+    SES=r==='__pc'?{role:'pc',nama:n}:{role:'area',area:r,nama:n};try{localStorage.setItem(LS_SES,JSON.stringify(SES))}catch(_){}
+    startApp()};
+}
+function startApp(){
+  $('#login').hidden=true;$('#shell').hidden=false;$('#tabs').hidden=false;
+  if(!isPC()){IN.area=SES.area;SPK_AREA=SES.area;WA.area=SES.area;RK_AREA=SES.area}
+  IN.d=null;VIEW='home';nav();R.home()}
 
 /* ---------- sinkron server ---------- */
-const cfgRec=()=>({id:'cfg',areas:DB.areas,libur:DB.libur,pct:DB.pct,_ubah:DB.cfgUbah||1});
+const cfgRec=()=>({id:'cfg',areas:DB.areas,libur:DB.libur,pct:DB.pct,pcPin:DB.set.pcPin,_ubah:DB.cfgUbah||1});
 function chip(state,txt){const c=$('#syncChip');c.className='chip '+(state||'');$('#syncTxt').textContent=txt}
 async function push(list){if(!DB.set.url)return;try{chip('', 'Mengirim…');
   const rows=list.map(x=>({id:x.rec.id,tipe:x.tipe,_ubah:x.rec._ubah||Date.now(),json:JSON.stringify(x.rec)}));
   const r=await fetch(DB.set.url,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({token:DB.set.token,rows})});
   const j=await r.json();if(!j.ok)throw new Error(j.err||'gagal');chip('on','Tersinkron')}catch(e){chip('err','Gagal kirim')}}
-async function sync(){if(!DB.set.url){chip('','Lokal');return}
-  try{chip('','Sinkron…');const r=await fetch(DB.set.url+(DB.set.url.includes('?')?'&':'?')+'token='+encodeURIComponent(DB.set.token));const j=await r.json();if(!j.ok)throw new Error(j.err);
+async function sync(){if(!DB.set.url){chip('','Lokal');return 'alamat server kosong'}
+  try{chip('','Sinkron…');const r=await fetch(DB.set.url+(DB.set.url.includes('?')?'&':'?')+'token='+encodeURIComponent(DB.set.token));const j=await r.json();if(!j.ok)throw new Error(j.err||'ditolak server');
     const remote={};j.rows.forEach(x=>{try{remote[x.id]={tipe:x.tipe,rec:JSON.parse(x.json)}}catch(_){}});
     const out=[];
     ['spk','lap'].forEach(t=>{const loc={};DB[t].forEach(x=>loc[x.id]=x);
       Object.values(remote).filter(x=>x.tipe===t).forEach(({rec})=>{const l=loc[rec.id];if(!l||(rec._ubah||0)>(l._ubah||0))loc[rec.id]=rec});
       DB[t].forEach(x=>{const rm=remote[x.id];if(!rm||(x._ubah||0)>(rm.rec._ubah||0))out.push({tipe:t,rec:x})});DB[t]=Object.values(loc)});
-    const rc=remote.cfg;if(rc&&(rc.rec._ubah||0)>(DB.cfgUbah||0)){DB.areas=rc.rec.areas;DB.libur=rc.rec.libur||[];DB.pct=rc.rec.pct||80;DB.cfgUbah=rc.rec._ubah}
+    const rc=remote.cfg;if(rc&&(rc.rec._ubah||0)>(DB.cfgUbah||0)){DB.areas=rc.rec.areas;DB.libur=rc.rec.libur||[];DB.pct=rc.rec.pct||80;if(rc.rec.pcPin)DB.set.pcPin=rc.rec.pcPin;DB.cfgUbah=rc.rec._ubah}
     else if(!rc||(DB.cfgUbah||0)>(rc.rec._ubah||0))out.push({tipe:'cfg',rec:cfgRec()});
-    save();if(out.length)await push(out);chip('on','Tersinkron');nav();R[VIEW]()}catch(e){chip('err','Server tidak terjangkau')}}
+    save();if(out.length)await push(out);chip('on','Tersinkron');if(SES){nav();if(VIEW!=='input'&&VIEW!=='spk')R[VIEW]()}else showLogin();return true}catch(e){chip('err','Server tidak terjangkau');if(!SES)showLogin();return (e&&e.message)||'server tidak terjangkau'}}
 $('#syncChip').onclick=sync;
 
-nav();R.home();sync();
+if(SES)startApp();else showLogin();sync();setInterval(()=>{if(SES&&document.visibilityState==='visible')sync()},120000);
 </script>
 
 </body>
