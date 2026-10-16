@@ -350,16 +350,19 @@ function nthWork(from,n){let s=from,c=0;for(let i=0;i<800;i++){if(isWork(s)){c++
 function nextWork(s){let x=addDays(s,1);while(!isWork(x))x=addDays(x,1);return x}
 
 /* ================= hitung SPK ================= */
+/* Kegiatan: Bongkar-pasang = 1 penuh; Bongkar saja / Pasang saja = setengah (unit rate dibayar per meter bongkar-pasang) */
+const kf=k=>k==='Bongkar'||k==='Pasang'?0.5:1;
 function spkCalc(s,ref){
   ref=ref||today();
   const keyOf=(j,u)=>j+'|'+u;
   const plan={};s.items.forEach(it=>{const k=keyOf(it.jenis,it.ukuran);plan[k]=(plan[k]||0)+Number(it.vol||0)});
-  const got={};let first=null,last=null;
+  const gB={},gP={};let first=null,last=null;
   liveLap().filter(l=>l.area===s.area&&l.tgl<=ref).forEach(l=>(l.items||[]).forEach(it=>{
-    if(it.spk!==s.no||!(Number(it.vol)>0))return;const k=keyOf(it.jenis,it.ukuran);got[k]=(got[k]||0)+Number(it.vol);
+    const v=Number(it.vol)||0;if(it.spk!==s.no||!(v>0))return;const k=keyOf(it.jenis,it.ukuran);
+    if(it.keg!=='Pasang')gB[k]=(gB[k]||0)+v;if(it.keg!=='Bongkar')gP[k]=(gP[k]||0)+v;
     if(!first||l.tgl<first)first=l.tgl;if(!last||l.tgl>last)last=l.tgl}));
-  let tp=0,td=0;Object.keys(plan).forEach(k=>{tp+=plan[k];td+=Math.min(plan[k],got[k]||0)});
-  const prog=tp?td/tp:0;
+  let tp=0,tb=0,tq=0;const got={};Object.keys(plan).forEach(k=>{tp+=plan[k];const b=Math.min(plan[k],gB[k]||0),q=Math.min(plan[k],gP[k]||0);tb+=b;tq+=q;got[k]=(b+q)/2});
+  const td=(tb+tq)/2,prog=tp?td/tp:0,progB=tp?tb/tp:0,progP=tp?tq/tp:0;
   const hk=workdays(s.mulai,s.selesai)||1;const hkM=Math.max(1,Math.ceil(hk*DB.pct/100));
   const tMandor=nthWork(isWork(s.mulai)?s.mulai:nextWork(s.mulai),hkM);
   const done=prog>=0.999;let status,pred;
@@ -368,18 +371,18 @@ function spkCalc(s,ref){
     const rate=first?Math.max(prog/Math.max(1,workdays(first,ref)),0.02):1/hkM;
     const need=Math.max(1,Math.ceil((1-prog)/rate));
     const start=first?nextWork(ref):(ref<s.mulai?(isWork(s.mulai)?s.mulai:nextWork(s.mulai)):nextWork(ref));
-    pred=nthWork(start,need);status=first?'Berjalan':(ref<s.mulai?'Belum mulai':'Terlambat mulai');
+    pred=nthWork(start,need);status=!first?(ref<s.mulai?'Belum mulai':'Terlambat mulai'):progB>=0.999?'Bongkar selesai':'Berjalan';
   }
   const ev=pred<=tMandor?'Sesuai target':pred<=s.selesai?'Lewat target mandor':'Lewat batas SPK';
   const tpd={};Object.keys(plan).forEach(k=>tpd[k]=plan[k]/hkM);
-  return {plan,got,prog,tp,td,hk,hkM,tMandor,status,pred,ev,first,last,tpd};
+  return {plan,got,gB,gP,prog,progB,progP,tp,td,tb,tq,hk,hkM,tMandor,status,pred,ev,first,last,tpd};
 }
-const stPill=s=>({'Selesai':'p-ok','Berjalan':'p-info','Belum mulai':'p-mute','Terlambat mulai':'p-bad'}[s]||'p-mute');
+const stPill=s=>({'Selesai':'p-ok','Berjalan':'p-info','Bongkar selesai':'p-warn','Belum mulai':'p-mute','Terlambat mulai':'p-bad'}[s]||'p-mute');
 const evPill=e=>({'Sesuai target':'p-ok','Lewat target mandor':'p-warn','Lewat batas SPK':'p-bad'}[e]||'p-mute');
 
 /* ================= agregasi ================= */
 function dayVol(area,tgl){const o={m:0,m2:0,lain:0};liveLap().filter(l=>l.area===area&&l.tgl===tgl).forEach(l=>(l.items||[]).forEach(it=>{
-  const v=Number(it.vol)||0;if(it.jenis==='Pipa')o.m+=v;else if(it.jenis==='Lainnya')o.lain+=v;else o.m2+=v}));return o}
+  const v=(Number(it.vol)||0)*kf(it.keg);if(it.jenis==='Pipa')o.m+=v;else if(it.jenis==='Lainnya')o.lain+=v;else o.m2+=v}));return o}
 const lapOf=(area,tgl)=>liveLap().find(l=>l.area===area&&l.tgl===tgl);
 function hadirN(l){if(!l||!l.hadir)return 0;const h=l.hadir;return (+h.m||0)+(+h.f||0)+(+h.t||0)+(+h.h||0)}
 function targetDay(area,tgl,pipaOnly){let t=0;if(!isWork(tgl))return 0;liveSpk().filter(s=>s.area===area).forEach(s=>{const c=spkCalc(s,addDays(tgl,-1));
@@ -392,6 +395,7 @@ function score(area,tgl){
   if(l){r.ada=true;
     const w=W8(l.dibuat||l._ubah);const dd=iso(w);const hr=w.getUTCHours()+w.getUTCMinutes()/60;
     if(dd<=tgl){r.lapor=dd<tgl||hr<18?10:7}else if(dd===addDays(tgl,1)&&hr<9)r.lapor=5;else r.lapor=2;
+    if(l.impor)r.lapor=0;
     r.ontime=r.lapor>=7;
     const v=dayVol(area,tgl);r.vol=v.m+v.m2;r.tgt=targetDay(area,tgl);
     if(r.tgt>0){r.pct=r.vol/r.tgt;r.target=r.pct>=1?30:r.pct>=.8?20:r.pct>=.5?10:r.vol>0?5:0}else if(r.vol>0)r.target=15;
@@ -509,7 +513,7 @@ R.home=function(){
       <div><div class="lbl" style="display:flex;justify-content:space-between"><span>Progres SPK area · ${run.length} aktif</span><span class="num">${Math.round(pct*100)}%</span></div><div class="bar" style="margin-top:5px"><i style="width:${Math.round(pct*100)}%;background:${AC[i%4]}"></i></div></div>
       <div class="acts" style="justify-content:space-between;align-items:center"><div class="acts">${can('input')?`<button class="btn sm" type="button" data-input="${a.kode}">${l?'Ubah laporan':'Isi laporan'}</button>`:''}<button class="btn sm ghost" type="button" data-wa="${a.kode}">Kirim WA</button></div><span class="pts num">${sc.total} poin</span></div></div>`}).join('');
   const rows=aktif.sort((a,b)=>a.c.pred<b.c.pred?-1:1).map(({sp,c})=>`<tr><td><b>${esc(sp.area)}</b></td><td><b>${esc(sp.no)}</b><div class="note">${esc(sp.uraian)}</div></td>
-    <td class="mini"><div class="bar"><i style="width:${Math.round(c.prog*100)}%"></i></div><div class="note num">${Math.round(c.prog*100)}% · ${fmt(c.td,1)}/${fmt(c.tp,1)}</div></td>
+    <td class="mini"><div class="bar"><i style="width:${Math.round(c.prog*100)}%"></i></div><div class="note num">${Math.round(c.prog*100)}% · bongkar ${Math.round(c.progB*100)}% · pasang ${Math.round(c.progP*100)}%</div></td>
     <td class="num">${tglID(c.tMandor,true)}</td><td class="num">${tglID(sp.selesai,true)}</td><td><span class="pill ${stPill(c.status)}">${c.status}</span></td>
     <td class="num">${tglID(c.pred,true)}</td><td><span class="pill ${evPill(c.ev)}">${c.ev}</span></td></tr>`).join('');
   $('#view').innerHTML=`
@@ -612,22 +616,23 @@ R.input=function(){
 };
 
 /* ================= SPK ================= */
-let SPK_AREA='Semua',SPK_EDIT=null;
+let SPK_AREA='Semua',SPK_EDIT=null,SPK_PROG=null;
 const areaSeg=(cur)=>(VA().length>1?['Semua',...VA().map(a=>a.kode)]:VA().map(a=>a.kode)).map(k=>`<button type="button" data-a="${esc(k)}" class="${k===cur?'act':''}">${esc(k)}</button>`).join('');
 R.spk=function(){
   if(SPK_EDIT)return spkForm();
+  if(SPK_PROG)return spkProg();
   if(SPK_AREA!=='Semua'&&!inVA(SPK_AREA))SPK_AREA=VA().length>1?'Semua':VA()[0].kode;
   const list=liveSpk().filter(s=>inVA(s.area)&&(SPK_AREA==='Semua'||s.area===SPK_AREA)).map(s=>({s,c:spkCalc(s)})).sort((a,b)=>(a.c.status==='Selesai')-(b.c.status==='Selesai')||(a.s.mulai<b.s.mulai?-1:1));
   const cards=list.map(({s,c})=>{
-    const byKey=Object.keys(c.plan).map(k=>{const [j,u]=k.split('|');const p=c.plan[k],g=Math.min(p,c.got[k]||0);
-      return `<tr><td>${esc(j)}</td><td><b>${esc(u)}</b></td><td class="r num">${fmt(p)}</td><td class="r num">${fmt(g)}</td><td class="r num">${fmt(p-g)}</td><td class="r num"><b>${fmt(c.tpd[k],1)}</b></td><td>${satOf(j)}</td></tr>`}).join('');
+    const byKey=Object.keys(c.plan).map(k=>{const [j,u]=k.split('|');const p=c.plan[k],b=Math.min(p,c.gB[k]||0),q=Math.min(p,c.gP[k]||0);
+      return `<tr><td>${esc(j)}</td><td><b>${esc(u)}</b></td><td class="r num">${fmt(p)}</td><td class="r num">${fmt(b)}</td><td class="r num">${fmt(q)}</td><td class="r num">${fmt(p-q)}</td><td class="r num"><b>${fmt(c.tpd[k],1)}</b></td><td>${satOf(j)}</td></tr>`}).join('');
     return `<div class="card spkcard"><div class="spkhead"><div><div class="lbl">${esc(s.area)}</div><h2>${esc(s.no)}</h2><div class="note">${esc(s.uraian)}</div></div>
       <div class="acts"><span class="pill ${stPill(c.status)}">${c.status}</span><span class="pill ${evPill(c.ev)}">${c.ev}</span></div></div>
-      <div><div class="bar"><i style="width:${Math.round(c.prog*100)}%"></i></div><div class="note num" style="margin-top:4px">${Math.round(c.prog*100)}% · ${fmt(c.td)} dari ${fmt(c.tp)}</div></div>
+      <div class="grid g2" style="gap:10px"><div><div class="lbl" style="display:flex;justify-content:space-between"><span>Terbongkar</span><span class="num">${Math.round(c.progB*100)}%</span></div><div class="bar" style="margin-top:4px"><i style="width:${Math.round(c.progB*100)}%;background:var(--a1)"></i></div></div><div><div class="lbl" style="display:flex;justify-content:space-between"><span>Terpasang</span><span class="num">${Math.round(c.progP*100)}%</span></div><div class="bar" style="margin-top:4px"><i style="width:${Math.round(c.progP*100)}%"></i></div></div></div>
       <div class="spkmeta"><div><span class="note">Mulai SPK</span><b>${tglID(s.mulai,true)}</b></div><div><span class="note">Target mandor (${c.hkM} HK)</span><b style="color:var(--gold-ink)">${tglID(c.tMandor,true)}</b></div>
        <div><span class="note">Batas SPK (${c.hk} HK)</span><b>${tglID(s.selesai,true)}</b></div><div><span class="note">${c.status==='Selesai'?'Selesai tanggal':'Prediksi selesai'}</span><b>${tglID(c.pred,true)}</b></div></div>
-      <div class="tw"><table><thead><tr><th>Jenis</th><th>Ukuran</th><th class="r">Volume SPK</th><th class="r">Terpasang</th><th class="r">Sisa</th><th class="r">Target / hari</th><th>Sat.</th></tr></thead><tbody>${byKey}</tbody></table></div>
-      ${can('spk_edit')?`<div class="acts"><button class="btn sm" type="button" data-edit="${s.id}">Ubah SPK</button></div>`:''}</div>`}).join('');
+      <div class="tw"><table><thead><tr><th>Jenis</th><th>Ukuran</th><th class="r">Volume SPK</th><th class="r">Terbongkar</th><th class="r">Terpasang</th><th class="r">Sisa pasang</th><th class="r">Target / hari</th><th>Sat.</th></tr></thead><tbody>${byKey}</tbody></table></div>
+      <div class="acts">${can('input')&&c.status!=='Selesai'?`<button class="btn sm pri" type="button" data-prog="${s.id}">Catat progres</button>`:''}${can('spk_edit')?`<button class="btn sm" type="button" data-edit="${s.id}">Ubah SPK</button>`:''}</div></div>`}).join('');
   $('#view').innerHTML=`<div class="head"><div><h1>Daftar SPK</h1><p class="sub">Target mandor ${DB.pct}% dari hari kerja SPK (Senin–Jumat, di luar tanggal merah).</p></div>
    ${can('spk_edit')?'<button class="btn pri" type="button" id="spkNew">+ SPK baru</button>':''}</div>
    <div class="seg" id="spkSeg">${areaSeg(SPK_AREA)}</div>
@@ -635,7 +640,44 @@ R.spk=function(){
   document.querySelectorAll('#spkSeg button').forEach(b=>b.onclick=()=>{SPK_AREA=b.dataset.a;R.spk()});
   const nb=$('#spkNew');if(nb)nb.onclick=()=>{SPK_EDIT={id:'spk-'+uid(),area:SPK_AREA==='Semua'?VA()[0].kode:SPK_AREA,no:'',uraian:'',mulai:today(),selesai:addDays(today(),7),items:[{jenis:'Pipa',ukuran:'4"',line:'',vol:''}],_new:true};R.spk()};
   document.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>{SPK_EDIT=JSON.parse(JSON.stringify(DB.spk.find(s=>s.id===b.dataset.edit)));R.spk()});
+  document.querySelectorAll('[data-prog]').forEach(b=>b.onclick=()=>{SPK_PROG={id:b.dataset.prog,tgl:today(),v:{}};R.spk()});
 };
+/* Catat progres SPK: isi volume terbongkar & terpasang per item sekaligus (mis. SPK yang sudah dikerjakan sebelum aplikasi dipakai) */
+function spkProg(){
+  const P=SPK_PROG,s=DB.spk.find(x=>x.id===P.id);if(!s||!inVA(s.area)){SPK_PROG=null;return R.spk()}
+  const c=spkCalc(s,P.tgl);const keys=Object.keys(c.plan);
+  keys.forEach(k=>{if(!P.v[k])P.v[k]={b:'',p:''}});
+  const rows=keys.map((k,i)=>{const [j,u]=k.split('|');const p=c.plan[k],sb=Math.max(0,p-(c.gB[k]||0)),sp=Math.max(0,p-(c.gP[k]||0));
+    return `<tr><td>${esc(j)} <b>${esc(u)}</b></td><td class="r num">${fmt(p)} ${satOf(j)}</td><td class="r num">${fmt(c.gB[k]||0)} / ${fmt(c.gP[k]||0)}</td>
+     <td><input class="num" type="number" step="0.01" min="0" data-pk="${i}" data-pf="b" value="${esc(P.v[k].b)}" placeholder="sisa ${fmt(sb)}" aria-label="Terbongkar ${esc(u)}" style="max-width:120px"></td>
+     <td><input class="num" type="number" step="0.01" min="0" data-pk="${i}" data-pf="p" value="${esc(P.v[k].p)}" placeholder="sisa ${fmt(sp)}" aria-label="Terpasang ${esc(u)}" style="max-width:120px"></td></tr>`}).join('');
+  $('#view').innerHTML=`<div class="head"><div><h1>Catat progres ${esc(s.no)}</h1><p class="sub">${esc(s.area)} · ${esc(s.uraian)}. Isi volume yang terbongkar dan terpasang pada tanggal ini; otomatis masuk laporan harian tanggal tersebut.</p></div></div>
+  <div class="card grid g3"><div class="f"><label for="pTgl">Tanggal pengerjaan</label><input type="date" id="pTgl" value="${P.tgl}"></div>
+   <div class="f"><span class="lbl">Isi cepat</span><div class="acts"><button class="btn sm" type="button" id="pAllB">Semua sisa terbongkar</button><button class="btn sm" type="button" id="pAllP">Semua sisa terpasang</button></div></div>
+   <div class="f"><span class="lbl">&nbsp;</span><button class="btn sm ghost" type="button" id="pClr">Kosongkan</button></div></div>
+  <div class="card"><div class="tw"><table><thead><tr><th>Item</th><th class="r">Volume SPK</th><th class="r">Sudah bongkar / pasang</th><th>Terbongkar hari itu</th><th>Terpasang hari itu</th></tr></thead><tbody>${rows}</tbody></table></div>
+   <p class="note" style="margin:8px 0 0">Volume bongkar dan pasang yang sama dicatat sebagai "Bongkar-pasang". Bongkar saja atau pasang saja dihitung setengah untuk progres.</p></div>
+  <div class="acts"><button class="btn pri" type="button" id="pSave">Simpan progres</button><button class="btn" type="button" id="pCancel">Batal</button></div>`;
+  $('#pTgl').onchange=e=>{P.tgl=e.target.value||today();spkProg()};
+  document.querySelectorAll('[data-pk]').forEach(x=>x.oninput=()=>{P.v[keys[+x.dataset.pk]][x.dataset.pf]=x.value});
+  const fill=f=>{keys.forEach(k=>{const p=c.plan[k],g=f==='b'?(c.gB[k]||0):(c.gP[k]||0);const sisa=Math.max(0,+(p-g).toFixed(3));P.v[k][f]=sisa?String(sisa):''});spkProg()};
+  $('#pAllB').onclick=()=>fill('b');$('#pAllP').onclick=()=>fill('p');
+  $('#pClr').onclick=()=>{keys.forEach(k=>P.v[k]={b:'',p:''});spkProg()};
+  $('#pCancel').onclick=()=>{SPK_PROG=null;R.spk()};
+  $('#pSave').onclick=()=>{
+    const add=[];keys.forEach(k=>{const [j,u]=k.split('|');const b=Number(P.v[k].b)||0,q=Number(P.v[k].p)||0;const both=Math.min(b,q);
+      const line=[...new Set(s.items.filter(it=>it.jenis===j&&it.ukuran===u).map(it=>it.line).filter(Boolean))].join(', ');
+      if(both>0)add.push({jenis:j,ukuran:u,spk:s.no,line,keg:'Bongkar-pasang',vol:+both.toFixed(3)});
+      if(b-both>0)add.push({jenis:j,ukuran:u,spk:s.no,line,keg:'Bongkar',vol:+(b-both).toFixed(3)});
+      if(q-both>0)add.push({jenis:j,ukuran:u,spk:s.no,line,keg:'Pasang',vol:+(q-both).toFixed(3)})});
+    if(!add.length){toast('Isi minimal satu volume');return}
+    const ex=lapOf(s.area,P.tgl);const now=Date.now();
+    const l=ex?JSON.parse(JSON.stringify(ex)):Object.assign(blankLap(s.area,P.tgl),{dibuat:now,impor:P.tgl<today()});
+    l.items=(l.items||[]).concat(add);l.oleh=SES.nama;l.pelapor=l.pelapor||SES.nama;l._ubah=now;l.del=false;
+    const i=DB.lap.findIndex(x=>x.id===l.id);if(i>=0)DB.lap[i]=l;else DB.lap.push(l);save();push([{tipe:'lap',rec:l}]);
+    audit('Catat progres SPK',`${s.area} ${s.no} ${P.tgl}: `+add.map(a=>`${a.jenis} ${a.ukuran} ${a.keg.toLowerCase()} ${fmt(a.vol)}`).join(', '));
+    SPK_PROG=null;toast('Progres tersimpan ke laporan '+tglID(P.tgl,true));R.spk()};
+}
 function spkForm(){
   const s=SPK_EDIT;
   const rows=s.items.map((x,i)=>`<div class="row rs rowbox"><div class="f"><label>Jenis</label>${jenisSel('si',i,x.jenis)}</div>
@@ -682,7 +724,7 @@ function waText(area,tgl){
     const v=dayVol(ak,tgl);if(its.length)out+=`Total: pipa ${fmt(v.m)} m${v.m2?` · HE/dinding ${fmt(v.m2)} m²`:''}${v.lain?` · lainnya ${fmt(v.lain)}`:''}\n`;
     if((l.kendala||[]).length){out+=`\n*Kendala*\n`;l.kendala.forEach(k=>{out+=`- ${k.kat}${k.jam?` (${fmt(k.jam,1)} jam)`:''}${k.ket?`: ${k.ket}`:''}\n`})}
     const sp=liveSpk().filter(s=>s.area===ak).map(s=>({s,c:spkCalc(s,tgl)})).filter(x=>x.c.status!=='Selesai'||x.c.last===tgl);
-    if(sp.length){out+=`\n*Progres SPK*\n`;sp.forEach(({s,c})=>{out+=`- ${s.no}: ${Math.round(c.prog*100)}% (${fmt(c.td,1)}/${fmt(c.tp,1)})${c.status==='Selesai'?' SELESAI':` · target ${tglID(c.tMandor,true)} · batas ${tglID(s.selesai,true)}`}${c.ev==='Lewat batas SPK'&&c.status!=='Selesai'?' ⚠':''}\n`})}
+    if(sp.length){out+=`\n*Progres SPK*\n`;sp.forEach(({s,c})=>{out+=`- ${s.no}: ${Math.round(c.prog*100)}% (bongkar ${Math.round(c.progB*100)}% · pasang ${Math.round(c.progP*100)}%)${c.status==='Selesai'?' SELESAI':` · target ${tglID(c.tMandor,true)} · batas ${tglID(s.selesai,true)}`}${c.ev==='Lewat batas SPK'&&c.status!=='Selesai'?' ⚠':''}\n`})}
     if((l.rencana||[]).length){out+=`\n*Rencana besok (${tglID(nextWork(tgl),true)})*\n`;l.rencana.forEach(x=>{out+=`- ${itemLabel(x)}${x.target?`: target ${fmt(x.target)} ${satOf(x.jenis)}`:''}${x.spk?` · ${x.spk}`:''}${x.line?` · ${x.line}`:''}\n`})}
     const sc=score(ak,tgl);out+=`\nPoin harian: ${sc.total}\n`;
     if(l.catatan)out+=`Catatan: ${l.catatan}\n`;
